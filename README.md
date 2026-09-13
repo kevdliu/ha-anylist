@@ -105,6 +105,12 @@ The integration uses Home Assistant's `DataUpdateCoordinator` and polls AnyList 
 
 If AnyList is unavailable, entities are marked unavailable through the coordinator until the next successful refresh.
 
+## Alexa Shopping List and Dashboard Sync
+
+See the [Alexa, AnyList, and dashboard synchronization guide](docs/shopping-list-sync.md)
+for a complete shopping list sync automation, a category-based kitchen dashboard
+card, screenshots, and setup instructions.
+
 ## Examples
 
 Trigger an automation whenever the actual contents of a shopping list change:

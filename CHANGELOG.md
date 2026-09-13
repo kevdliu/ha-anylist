@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.9 - 2026-09-13
+
+- Add a guide for synchronizing Alexa and AnyList shopping lists with a kitchen
+  dashboard card, including complete YAML examples and screenshots.
+
 ## 0.4.8 - 2026-09-13
 
 - Fix items assigned to newly created AnyList categories appearing under
