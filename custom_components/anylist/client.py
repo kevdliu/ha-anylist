@@ -17,6 +17,7 @@ import time
 from typing import Any, Callable, TypeVar
 from urllib import error as urlerror
 from urllib import request
+from urllib.parse import urlsplit
 import uuid
 
 try:
@@ -29,6 +30,8 @@ _LOGGER = logging.getLogger(__name__)
 
 _API_BASE_URL = "https://www.anylist.com"
 _API_VERSION = "3"
+_PHOTO_BASE_URL = "https://photos.anylist.com/"
+_PHOTO_READY_TIMEOUT = 15
 _ICALENDAR_TOKEN_RE = re.compile(r"[a-f0-9]{32}")
 
 _T = TypeVar("_T")
@@ -625,11 +628,18 @@ def _parse_recipe(data: bytes) -> Recipe | None:
         prep_time=_first_int(fields, 19),
         cook_time=_first_int(fields, 18),
         rating=_first_int(fields, 15),
-        photo_urls=[
-            value.decode("utf-8", errors="replace")
-            for value in _all_values(fields, 13)
-            if isinstance(value, bytes)
-        ],
+        photo_urls=(
+            [
+                f"{_PHOTO_BASE_URL}{value.decode('utf-8', errors='replace')}.jpg"
+                for value in _all_values(fields, 11)
+                if isinstance(value, bytes) and value
+            ]
+            or [
+                value.decode("utf-8", errors="replace")
+                for value in _all_values(fields, 13)
+                if isinstance(value, bytes)
+            ]
+        ),
     )
 
 
@@ -778,6 +788,7 @@ def _pb_recipe(
     name: str,
     ingredients: list[Ingredient],
     preparation_steps: list[str],
+    photo_id: str | None = None,
 ) -> bytes:
     """Build PBRecipe."""
     timestamp = _current_timestamp()
@@ -785,6 +796,7 @@ def _pb_recipe(
         _field_string(1, recipe_id),
         _field_double(2, timestamp),
         _field_string(3, name),
+        _field_string(11, photo_id),
     ]
     payload.extend(_field_message(8, _pb_ingredient(ingredient)) for ingredient in ingredients)
     payload.extend(_field_string(9, step) for step in preparation_steps)
@@ -803,10 +815,12 @@ def _pb_recipe_operation(
     user_id: str,
     recipe: bytes | None = None,
     recipe_ids: list[str] | None = None,
+    recipe_data_id: str | None = None,
 ) -> bytes:
     """Build PBRecipeOperation."""
     payload = [
         _field_message(1, _pb_operation_metadata(_generate_id(), handler_id, user_id)),
+        _field_string(2, recipe_data_id),
         _field_message(3, recipe),
         _field_bool(8, False),
     ]
@@ -1142,6 +1156,7 @@ class AnyListClient:
         name: str,
         ingredients: list[Ingredient],
         preparation_steps: list[str],
+        photo_id: str | None = None,
     ) -> Recipe:
         """Create a recipe."""
         recipe_id = _generate_id()
@@ -1150,11 +1165,13 @@ class AnyListClient:
             name=name,
             ingredients=ingredients,
             preparation_steps=preparation_steps,
+            photo_id=photo_id,
         )
         operation = _pb_recipe_operation(
             handler_id="save-recipe",
             user_id=self._user_id,
             recipe=recipe_payload,
+            recipe_data_id=self._recipe_data_id(self._get_recipe_data_fields()),
         )
         self.post("data/user-recipe-data/update", _pb_recipe_operation_list([operation]))
         return Recipe(
@@ -1162,7 +1179,73 @@ class AnyListClient:
             name=name,
             ingredients=ingredients,
             preparation_steps=preparation_steps,
+            photo_urls=[f"{_PHOTO_BASE_URL}{photo_id}.jpg"] if photo_id else [],
         )
+
+    def upload_recipe_photo(self, image_url: str) -> str:
+        """Import an image using the AnyList web app's upload-url flow."""
+        try:
+            parsed = urlsplit(image_url)
+            valid = parsed.scheme in {"http", "https"} and bool(parsed.hostname)
+        except ValueError:
+            valid = False
+        if not valid:
+            raise AnyListError("Recipe image URL must be an HTTP or HTTPS URL")
+
+        photo_id = _generate_id()
+        # The web app uploads the URL first, then saves PBRecipe.photoIds (11).
+        # PBRecipe.photoUrls (13) alone does not attach an uploaded photo.
+        # Verified against https://www.anylist.com/static/webapp/js/app.min.js.
+        self.post_multipart(
+            "/data/photos/upload-url",
+            fields={"photo_url": image_url, "photo_id": photo_id},
+        )
+        self._wait_for_recipe_photo(photo_id)
+        return photo_id
+
+    @staticmethod
+    def _wait_for_recipe_photo(photo_id: str) -> None:
+        """Wait a bounded time for AnyList to finish processing the image."""
+        deadline = time.monotonic() + _PHOTO_READY_TIMEOUT
+        while (remaining := deadline - time.monotonic()) > 0:
+            try:
+                # Only the AnyList-hosted image is fetched here, without credentials.
+                with request.urlopen(
+                    f"{_PHOTO_BASE_URL}{photo_id}.jpg", timeout=min(5, remaining)
+                ) as response:
+                    if (
+                        response.status == 200
+                        and response.headers.get("Content-Type", "").startswith("image/")
+                        and response.read(1)
+                    ):
+                        return
+                    raise AnyListError("AnyList did not return a valid recipe image")
+            except urlerror.HTTPError as err:
+                status = err.code
+                err.close()
+                if status not in {403, 404}:
+                    raise AnyListHTTPError(
+                        status, f"Recipe image check failed with HTTP {status}"
+                    ) from err
+            except (urlerror.URLError, socket.timeout, TimeoutError) as err:
+                raise AnyListError("Could not verify the uploaded recipe image") from err
+            time.sleep(min(1, max(0, deadline - time.monotonic())))
+        raise AnyListTimeoutError(
+            "Timed out waiting for AnyList to process the recipe image"
+        )
+
+    def _get_recipe_data_fields(self) -> dict[int, list[tuple[int, Any]]]:
+        """Read the recipe collection metadata needed by recipe operations."""
+        raw = _first_value(_parse_fields(self.get_user_data()), 3)
+        return _parse_fields(raw) if isinstance(raw, bytes) else {}
+
+    @staticmethod
+    def _recipe_data_id(fields: dict[int, list[tuple[int, Any]]]) -> str:
+        """Require the recipe data ID used by the AnyList web app."""
+        recipe_data_id = _first_string(fields, 9)
+        if not recipe_data_id:
+            raise AnyListError("AnyList did not return a recipe data ID")
+        return recipe_data_id
 
     def update_recipe(
         self,
@@ -1187,10 +1270,23 @@ class AnyListClient:
 
     def delete_recipe(self, recipe_id: str) -> None:
         """Delete a recipe."""
+        fields = self._get_recipe_data_fields()
+        raw_recipe = next(
+            (
+                raw
+                for raw in _all_values(fields, 3)
+                if isinstance(raw, bytes)
+                and _first_string(_parse_fields(raw), 1) == recipe_id
+            ),
+            None,
+        )
+        if raw_recipe is None:
+            raise AnyListNotFoundError(f"AnyList recipe '{recipe_id}' was not found")
         operation = _pb_recipe_operation(
             handler_id="remove-recipe",
             user_id=self._user_id,
-            recipe_ids=[recipe_id],
+            recipe=raw_recipe,
+            recipe_data_id=self._recipe_data_id(fields),
         )
         self.post("data/user-recipe-data/update", _pb_recipe_operation_list([operation]))
 
@@ -1238,17 +1334,24 @@ class AnyListClient:
         """Post an AnyList operations request."""
         return self.post_multipart(f"/{endpoint}", "operations", body)
 
-    def post_multipart(self, endpoint: str, field_name: str, body: bytes) -> bytes:
+    def post_multipart(
+        self,
+        endpoint: str,
+        field_name: str | None = None,
+        body: bytes | None = None,
+        *,
+        fields: dict[str, str] | None = None,
+    ) -> bytes:
         """Post an authenticated multipart request with token refresh."""
         try:
-            return self._authenticated_multipart(endpoint, field_name, body)
+            return self._authenticated_multipart(endpoint, field_name, body, fields=fields)
         except AnyListHTTPError as err:
             if err.status != 401:
                 raise
 
         _LOGGER.debug("Refreshing AnyList access token after authorization failure")
         self._refresh_tokens()
-        return self._authenticated_multipart(endpoint, field_name, body)
+        return self._authenticated_multipart(endpoint, field_name, body, fields=fields)
 
     def _set_item_checked(self, list_id: str, item_id: str, checked: bool) -> None:
         """Set a list item's checked state."""
@@ -1264,15 +1367,22 @@ class AnyListClient:
     def _authenticated_multipart(
         self,
         endpoint: str,
-        field_name: str,
-        body: bytes,
+        field_name: str | None,
+        body: bytes | None,
+        *,
+        fields: dict[str, str] | None = None,
     ) -> bytes:
         """Send an authenticated multipart request."""
         headers = self._base_headers(self._client_identifier)
         headers["Authorization"] = f"Bearer {self._access_token}"
         return self._request_multipart(
             endpoint,
-            files={field_name: body},
+            files=(
+                {field_name: body}
+                if field_name is not None and body is not None
+                else None
+            ),
+            fields=fields,
             headers=headers,
             timeout=ANYLIST_REQUEST_TIMEOUT,
         )

@@ -102,17 +102,24 @@ class FakeAnyListClient:
         name: str,
         ingredients: list[Any],
         preparation_steps: list[str],
+        photo_id: str | None = None,
     ) -> Any:
         """Create and return a fake recipe."""
-        self.calls.append(("create_recipe", (name, ingredients, preparation_steps)))
+        self.calls.append(("create_recipe", (name, ingredients, preparation_steps, photo_id)))
         recipe = FakeRecipe(
             id="created-recipe",
             name=name,
             ingredients=ingredients,
             preparation_steps=preparation_steps,
+            photo_urls=[f"https://photos.anylist.com/{photo_id}.jpg"] if photo_id else [],
         )
         self.recipes.append(recipe)
         return recipe
+
+    def upload_recipe_photo(self, image_url: str) -> str:
+        """Record importing a recipe image."""
+        self.calls.append(("upload_recipe_photo", (image_url,)))
+        return "uploaded-photo"
 
     def update_recipe(
         self,

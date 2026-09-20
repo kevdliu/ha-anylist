@@ -132,6 +132,32 @@ data:
   scale_factor: 2
 ```
 
+Create a recipe with an image:
+
+```yaml
+action: anylist.create_recipe
+data:
+  name: Tomato Soup
+  ingredients:
+    - name: Tomatoes
+      quantity: 500 g
+    - name: Water
+      quantity: 250 ml
+  preparation_steps:
+    - Simmer the tomatoes and water until soft.
+    - Blend until smooth.
+  image_url: "https://example.com/tomato-soup.jpg"
+response_variable: created_recipe
+```
+
+Replace the example image URL with a publicly accessible HTTP or HTTPS URL
+pointing directly to an image. AnyList downloads and stores the image, so local
+Home Assistant URLs and images requiring a login will not work. The action waits
+for the image to become available before creating the recipe; if importing the
+image fails, the action reports an error and does not create the recipe.
+`image_url` is optional and applies to recipe creation. The response includes the
+stored image URL in `created_recipe.recipe.photo_urls`.
+
 Fetch recipes whose names contain `pasta`:
 
 ```yaml

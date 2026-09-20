@@ -36,10 +36,12 @@ from .client import (
 )
 from .const import (
     ANYLIST_LOGIN_TIMEOUT,
+    ANYLIST_PHOTO_TIMEOUT,
     ANYLIST_POLL_INTERVAL,
     ANYLIST_REFRESH_TIMEOUT,
     ANYLIST_REQUEST_TIMEOUT,
     ATTR_CONFIG_ENTRY_ID,
+    ATTR_IMAGE_URL,
     ATTR_INGREDIENTS,
     ATTR_INCLUDE_INGREDIENTS,
     ATTR_INCLUDE_STEPS,
@@ -132,6 +134,7 @@ CREATE_RECIPE_SERVICE_SCHEMA = vol.Schema(
     {
         vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
         vol.Required(ATTR_NAME): cv.string,
+        vol.Optional(ATTR_IMAGE_URL): cv.url,
         vol.Required(ATTR_INGREDIENTS): vol.All(
             cv.ensure_list,
             [INGREDIENT_INPUT_SCHEMA],
@@ -648,13 +651,22 @@ def _async_register_services(hass: HomeAssistant) -> None:
         _LOGGER.debug("Creating AnyList recipe '%s'", call.data[ATTR_NAME])
 
         try:
+            photo_id = None
+            if image_url := call.data.get(ATTR_IMAGE_URL):
+                photo_id = await async_call_with_timeout(
+                    hass,
+                    client.upload_recipe_photo,
+                    image_url,
+                    timeout=ANYLIST_PHOTO_TIMEOUT,
+                )
             recipe = await async_call_with_timeout(
                 hass,
                 client.create_recipe,
                 call.data[ATTR_NAME],
                 ingredients,
                 preparation_steps,
-                timeout=ANYLIST_REQUEST_TIMEOUT,
+                photo_id,
+                timeout=ANYLIST_REFRESH_TIMEOUT,
             )
         except Exception as err:
             raise _translated_error(
@@ -756,7 +768,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 hass,
                 client.delete_recipe,
                 recipe.id,
-                timeout=ANYLIST_REQUEST_TIMEOUT,
+                timeout=ANYLIST_REFRESH_TIMEOUT,
             )
         except Exception as err:
             raise _translated_error(

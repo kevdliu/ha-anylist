@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0 - 2026-09-20
+
+- Add an optional `image_url` to `anylist.create_recipe`. AnyList downloads and
+  stores the image before the recipe is created.
+- Return AnyList-hosted image URLs for recipes with uploaded photos.
+- Fix recipe deletion by sending the recipe and its recipe data ID in the
+  format expected by AnyList.
+
 ## 0.4.9 - 2026-09-13
 
 - Add a guide for synchronizing Alexa and AnyList shopping lists with a kitchen

@@ -90,7 +90,10 @@ def _recipes_user_data() -> bytes:
         + client_module._field_int32(19, 5)
         + client_module._field_string(20, "4")
     )
-    recipes_response = client_module._field_message(3, recipe)
+    recipes_response = (
+        client_module._field_message(3, recipe)
+        + client_module._field_string(9, "recipe-data-1")
+    )
     return client_module._field_message(3, recipes_response)
 
 
@@ -311,7 +314,7 @@ def test_client_post_multipart_refreshes_after_401(monkeypatch: pytest.MonkeyPat
     client = _client()
     calls: list[str] = []
 
-    def fake_authenticated(endpoint: str, field_name: str, body: bytes) -> bytes:
+    def fake_authenticated(endpoint: str, field_name: str, body: bytes, **kwargs) -> bytes:
         calls.append(endpoint)
         if len(calls) == 1:
             raise client_module.AnyListHTTPError(401, "expired")
@@ -326,7 +329,7 @@ def test_client_post_multipart_refreshes_after_401(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(
         client,
         "_authenticated_multipart",
-        lambda *args: (_ for _ in ()).throw(
+        lambda *args, **kwargs: (_ for _ in ()).throw(
             client_module.AnyListHTTPError(500, "server")
         ),
     )

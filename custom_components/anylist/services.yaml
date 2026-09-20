@@ -125,6 +125,13 @@ create_recipe:
   name: Create recipe
   description: Create a new AnyList recipe.
   fields:
+    image_url:
+      name: Image URL
+      description: Public HTTP or HTTPS URL of an image for the recipe. AnyList downloads and stores the image before creating the recipe.
+      example: "https://example.com/recipe.jpg"
+      selector:
+        text:
+          type: url
     config_entry_id:
       name: Config entry ID
       description: Specific AnyList config entry to use when multiple AnyList accounts are configured.

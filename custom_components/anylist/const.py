@@ -16,6 +16,7 @@ DATA_ICALENDAR_URL = "icalendar_url"
 ANYLIST_REQUEST_TIMEOUT = 15  # seconds
 ANYLIST_LOGIN_TIMEOUT = 20  # seconds
 ANYLIST_REFRESH_TIMEOUT = 30  # seconds
+ANYLIST_PHOTO_TIMEOUT = 65  # upload, token refresh, and image processing
 ANYLIST_POLL_INTERVAL = 60  # seconds
 
 # Services
@@ -37,6 +38,7 @@ ATTR_RECIPE_NAME = "recipe_name"
 ATTR_LIST_ID = "list_id"
 ATTR_LIST_NAME = "list_name"
 ATTR_NAME = "name"
+ATTR_IMAGE_URL = "image_url"
 ATTR_INGREDIENTS = "ingredients"
 ATTR_PREPARATION_STEPS = "preparation_steps"
 ATTR_SCALE_FACTOR = "scale_factor"
