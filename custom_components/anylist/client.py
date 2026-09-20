@@ -1253,24 +1253,57 @@ class AnyListClient:
         name: str,
         ingredients: list[Ingredient],
         preparation_steps: list[str],
+        photo_id: str | None = None,
     ) -> None:
-        """Update a recipe."""
-        recipe_payload = _pb_recipe(
-            recipe_id=recipe_id,
-            name=name,
-            ingredients=ingredients,
-            preparation_steps=preparation_steps,
-        )
+        """Update recipe content, preserving photos unless a new one is supplied."""
+        fields = self._get_recipe_data_fields()
+        raw_recipe = self._find_raw_recipe(fields, recipe_id)
+        # The web app edits a copy of the original PBRecipe. Preserve fields
+        # outside this action's scope, including photos and creation metadata.
+        replaced_fields = {2, 3, 8, 9}
+        if photo_id is not None:
+            replaced_fields.update({11, 13})
+        payload = []
+        for number, values in _parse_fields(raw_recipe).items():
+            if number in replaced_fields:
+                continue
+            for wire_type, value in values:
+                if wire_type == 2:
+                    payload.append(_field_bytes(number, value))
+                elif wire_type == 0:
+                    payload.append(_field_key(number, wire_type) + _encode_varint(value))
+                else:
+                    payload.append(_field_key(number, wire_type) + value)
+        payload.extend((_field_double(2, _current_timestamp()), _field_string(3, name)))
+        payload.extend(_field_message(8, _pb_ingredient(item)) for item in ingredients)
+        payload.extend(_field_string(9, step) for step in preparation_steps)
+        if photo_id is not None:
+            payload.append(_field_string(11, photo_id))
         operation = _pb_recipe_operation(
             handler_id="save-recipe",
             user_id=self._user_id,
-            recipe=recipe_payload,
+            recipe=b"".join(payload),
+            recipe_data_id=self._recipe_data_id(fields),
         )
         self.post("data/user-recipe-data/update", _pb_recipe_operation_list([operation]))
 
     def delete_recipe(self, recipe_id: str) -> None:
         """Delete a recipe."""
         fields = self._get_recipe_data_fields()
+        raw_recipe = self._find_raw_recipe(fields, recipe_id)
+        operation = _pb_recipe_operation(
+            handler_id="remove-recipe",
+            user_id=self._user_id,
+            recipe=raw_recipe,
+            recipe_data_id=self._recipe_data_id(fields),
+        )
+        self.post("data/user-recipe-data/update", _pb_recipe_operation_list([operation]))
+
+    @staticmethod
+    def _find_raw_recipe(
+        fields: dict[int, list[tuple[int, Any]]], recipe_id: str
+    ) -> bytes:
+        """Find the original recipe message without losing unmodeled fields."""
         raw_recipe = next(
             (
                 raw
@@ -1282,13 +1315,7 @@ class AnyListClient:
         )
         if raw_recipe is None:
             raise AnyListNotFoundError(f"AnyList recipe '{recipe_id}' was not found")
-        operation = _pb_recipe_operation(
-            handler_id="remove-recipe",
-            user_id=self._user_id,
-            recipe=raw_recipe,
-            recipe_data_id=self._recipe_data_id(fields),
-        )
-        self.post("data/user-recipe-data/update", _pb_recipe_operation_list([operation]))
+        return raw_recipe
 
     def add_recipe_to_list(
         self,

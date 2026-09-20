@@ -168,8 +168,15 @@ create_recipe:
 
 update_recipe:
   name: Update recipe
-  description: Replace an existing AnyList recipe by ID or exact current recipe name.
+  description: Update an existing AnyList recipe by ID or exact current recipe name. Preserve its image unless image_url is supplied.
   fields:
+    image_url:
+      name: Image URL
+      description: Public HTTP or HTTPS URL of an image to add or replace. Omit to keep the existing image. AnyList downloads and stores the image before updating the recipe.
+      example: "https://example.com/recipe.jpg"
+      selector:
+        text:
+          type: url
     config_entry_id:
       name: Config entry ID
       description: Specific AnyList config entry to use when multiple AnyList accounts are configured.

@@ -152,6 +152,7 @@ UPDATE_RECIPE_SERVICE_SCHEMA = vol.Schema(
         vol.Optional(ATTR_RECIPE_ID): cv.string,
         vol.Optional(ATTR_RECIPE_NAME): cv.string,
         vol.Required(ATTR_NAME): cv.string,
+        vol.Optional(ATTR_IMAGE_URL): cv.url,
         vol.Required(ATTR_INGREDIENTS): vol.All(
             cv.ensure_list,
             [INGREDIENT_INPUT_SCHEMA],
@@ -709,6 +710,14 @@ def _async_register_services(hass: HomeAssistant) -> None:
         )
 
         try:
+            photo_id = None
+            if image_url := call.data.get(ATTR_IMAGE_URL):
+                photo_id = await async_call_with_timeout(
+                    hass,
+                    client.upload_recipe_photo,
+                    image_url,
+                    timeout=ANYLIST_PHOTO_TIMEOUT,
+                )
             await async_call_with_timeout(
                 hass,
                 client.update_recipe,
@@ -716,7 +725,8 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 call.data[ATTR_NAME],
                 ingredients,
                 preparation_steps,
-                timeout=ANYLIST_REQUEST_TIMEOUT,
+                photo_id,
+                timeout=ANYLIST_REFRESH_TIMEOUT,
             )
         except Exception as err:
             raise _translated_error(

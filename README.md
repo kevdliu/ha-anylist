@@ -155,8 +155,34 @@ pointing directly to an image. AnyList downloads and stores the image, so local
 Home Assistant URLs and images requiring a login will not work. The action waits
 for the image to become available before creating the recipe; if importing the
 image fails, the action reports an error and does not create the recipe.
-`image_url` is optional and applies to recipe creation. The response includes the
+`image_url` is optional. The response includes the
 stored image URL in `created_recipe.recipe.photo_urls`.
+
+To add or replace an image on an existing recipe, use `anylist.update_recipe`:
+
+```yaml
+action: anylist.update_recipe
+data:
+  recipe_name: Tomato Soup
+  name: Tomato Soup
+  ingredients:
+    - name: Tomatoes
+      quantity: 500 g
+    - name: Water
+      quantity: 250 ml
+  preparation_steps:
+    - Simmer the tomatoes and water until soft.
+    - Blend until smooth.
+  image_url: "https://example.com/tomato-soup.jpg"
+response_variable: updated_recipe
+```
+
+Provide either `recipe_id` or the exact current `recipe_name`. The action still
+requires the complete replacement `name`, `ingredients`, and `preparation_steps`.
+Omitting `image_url` keeps the existing image. Providing it adds an image to a
+recipe without one, or replaces its existing image. Other metadata, including
+notes, source, rating, and creation date, is preserved. If importing the image
+fails, the recipe is not updated.
 
 Fetch recipes whose names contain `pasta`:
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.1 - 2026-09-20
+
+- Add an optional `image_url` to `anylist.update_recipe` to add or replace a
+  recipe image using AnyList's image import flow.
+- Preserve existing images when `image_url` is omitted, along with recipe
+  metadata such as notes, source, rating, and creation date during updates.
+
 ## 0.5.0 - 2026-09-20
 
 - Add an optional `image_url` to `anylist.create_recipe`. AnyList downloads and

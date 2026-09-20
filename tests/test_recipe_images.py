@@ -310,3 +310,157 @@ async def test_create_service_rejects_invalid_image_url(
             blocking=True,
         )
     assert client.calls == []
+
+
+@pytest.mark.parametrize("old_photo", [None, "old-photo"])
+@pytest.mark.parametrize("new_photo", [None, "new-photo"])
+def test_update_recipe_photo_and_metadata(monkeypatch, old_photo, new_photo) -> None:
+    """Add, replace, or retain photos without resetting unrelated wire fields."""
+    client = _client()
+    raw = client_module._first_value(
+        client_module._parse_fields(
+            client_module._first_value(
+                client_module._parse_fields(_recipes_user_data()), 3
+            )
+        ),
+        3,
+    )
+    raw += client_module._field_double(16, 1234.0)
+    raw += client_module._field_double(14, 2.5)
+    raw += client_module._field_string(99, "future metadata")
+    raw += client_module._field_key(100, 5) + b"abcd"
+    if old_photo:
+        raw += client_module._field_string(11, old_photo)
+    response = client_module._field_message(3, raw) + client_module._field_string(
+        9, "recipe-data-1"
+    )
+    monkeypatch.setattr(
+        client, "get_user_data", lambda: client_module._field_message(3, response)
+    )
+    save = Mock(return_value=b"")
+    monkeypatch.setattr(client, "post", save)
+    client.update_recipe("recipe-1", "New Soup", [], ["New step"], new_photo)
+    operation = _operation(save.call_args.args[1])
+    assert client_module._first_string(operation, 2) == "recipe-data-1"
+    updated = client_module._parse_fields(client_module._first_value(operation, 3))
+    original = client_module._parse_fields(raw)
+    changed = {2, 3, 8, 9} | ({11, 13} if new_photo else set())
+    assert {k: v for k, v in updated.items() if k not in changed} == {
+        k: v for k, v in original.items() if k not in changed
+    }
+    assert client_module._first_string(updated, 3) == "New Soup"
+    assert client_module._all_values(updated, 8) == []
+    assert client_module._all_values(updated, 9) == [b"New step"]
+    assert client_module._first_string(updated, 11) == (new_photo or old_photo)
+    assert client_module._all_values(updated, 13) == (
+        [] if new_photo else [b"https://example.com/photo.jpg"]
+    )
+
+
+def test_update_missing_recipe_does_not_save(monkeypatch) -> None:
+    client = _client()
+    monkeypatch.setattr(client, "get_user_data", _recipes_user_data)
+    save = Mock()
+    monkeypatch.setattr(client, "post", save)
+    with pytest.raises(client_module.AnyListNotFoundError):
+        client.update_recipe("missing", "Soup", [], [], "photo-1")
+    save.assert_not_called()
+
+
+@pytest.mark.parametrize("old_image", [None, "https://example.com/old.jpg"])
+@pytest.mark.parametrize("image_url", [None, "https://example.com/new.jpg"])
+async def test_update_service_with_optional_image(
+    hass: HomeAssistant, old_image, image_url
+) -> None:
+    entry = _mock_entry()
+    entry.add_to_hass(hass)
+    client, _ = _attach_runtime(hass, entry)
+    client.recipes[0].photo_urls = [old_image] if old_image else []
+    assert await async_setup(hass, {})
+    data = {
+        "recipe_id": "recipe-1",
+        "name": "Updated Soup",
+        "ingredients": [],
+        "preparation_steps": [],
+    }
+    if image_url:
+        data["image_url"] = image_url
+    result = await hass.services.async_call(
+        "anylist", "update_recipe", data, blocking=True, return_response=True
+    )
+    expected = (
+        ["https://photos.anylist.com/uploaded-photo.jpg"]
+        if image_url
+        else ([old_image] if old_image else [])
+    )
+    assert result["recipe"]["photo_urls"] == expected
+    assert result["recipe"]["name"] == "Updated Soup"
+    mutations = [
+        (name, args)
+        for name, args in client.calls
+        if name in {"upload_recipe_photo", "update_recipe"}
+    ]
+    assert [name for name, args in mutations] == (
+        ["upload_recipe_photo", "update_recipe"] if image_url else ["update_recipe"]
+    )
+    assert mutations[-1][1][-1] == ("uploaded-photo" if image_url else None)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        client_module.AnyListHTTPError(400, "invalid image"),
+        client_module.AnyListTimeoutError("image pending"),
+    ],
+)
+async def test_update_image_failure_leaves_recipe_unchanged(
+    hass: HomeAssistant, monkeypatch, error
+) -> None:
+    entry = _mock_entry()
+    entry.add_to_hass(hass)
+    client, _ = _attach_runtime(hass, entry)
+    original = client.recipes[0].name
+    monkeypatch.setattr(client, "upload_recipe_photo", Mock(side_effect=error))
+    assert await async_setup(hass, {})
+    with pytest.raises(HomeAssistantError) as exc:
+        await hass.services.async_call(
+            "anylist",
+            "update_recipe",
+            {
+                "recipe_id": "recipe-1",
+                "name": "Changed",
+                "ingredients": [],
+                "preparation_steps": [],
+                "image_url": "https://example.com/broken.jpg",
+            },
+            blocking=True,
+        )
+    assert exc.value.translation_key == "update_recipe_failed"
+    assert not any(name == "update_recipe" for name, _ in client.calls)
+    assert client.recipes[0].name == original
+
+
+@pytest.mark.parametrize(
+    "url", ["", "file:///tmp/image.jpg", "ftp://example.com/image.jpg", "not-a-url"]
+)
+async def test_update_service_rejects_invalid_image_url(
+    hass: HomeAssistant, url
+) -> None:
+    entry = _mock_entry()
+    entry.add_to_hass(hass)
+    client, _ = _attach_runtime(hass, entry)
+    assert await async_setup(hass, {})
+    with pytest.raises(vol.Invalid):
+        await hass.services.async_call(
+            "anylist",
+            "update_recipe",
+            {
+                "recipe_id": "recipe-1",
+                "name": "Soup",
+                "ingredients": [],
+                "preparation_steps": [],
+                "image_url": url,
+            },
+            blocking=True,
+        )
+    assert client.calls == []
