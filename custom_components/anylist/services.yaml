@@ -10,9 +10,49 @@ refresh:
       selector:
         text:
 
+search_recipes:
+  name: Search recipes
+  description: >-
+    Find compact recipe candidates by words in any order, with minor typo tolerance.
+    Returns recipes (id, name, score, match_explanation), count and has_more.
+    Scores rank relevance, not confidence. Use conversation context to select a
+    candidate, clarify ambiguous matches before editing, then call get_recipe with
+    its exact ID for full details.
+  fields:
+    config_entry_id:
+      name: Config entry ID
+      description: Specific AnyList config entry to query when multiple AnyList accounts are configured. Use the same entry for get_recipe.
+      advanced: true
+      example: "01HABCDEF1234567890"
+      selector:
+        text:
+    query:
+      name: Query
+      description: Recipe search words. Must contain at least one letter or number. Case, punctuation, accents and word order are normalized; extra title words are allowed.
+      required: true
+      example: "pink horseradish salmon"
+      selector:
+        text:
+    limit:
+      name: Limit
+      description: Maximum candidates to return (1 to 50). Defaults to 15. Unrelated recipes are excluded even if fewer candidates remain.
+      default: 15
+      selector:
+        number:
+          min: 1
+          max: 50
+          step: 1
+          mode: box
+    include_ingredients:
+      name: Search ingredient names
+      description: Also match ingredient names, with less weight than titles. Ingredients and preparation steps are never included in search results.
+      default: false
+      selector:
+        boolean:
+
 get_recipes:
   name: Get recipes
-  description: Return AnyList recipes for use in automations and Node-RED.
+  description: Return AnyList recipes with an optional case-insensitive substring filter. For ranked word and typo matching, use search_recipes, then get_recipe with a selected ID.
   fields:
     config_entry_id:
       name: Config entry ID
@@ -42,7 +82,7 @@ get_recipes:
 
 get_recipe:
   name: Get recipe
-  description: Return a single AnyList recipe by ID or exact name.
+  description: Return a single AnyList recipe by ID or exact name. After search_recipes, pass the selected candidate's exact ID as recipe_id to retrieve full details. Clarify ambiguous matches before editing.
   fields:
     config_entry_id:
       name: Config entry ID

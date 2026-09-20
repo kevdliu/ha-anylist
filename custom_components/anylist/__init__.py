@@ -45,6 +45,7 @@ from .const import (
     ATTR_INGREDIENTS,
     ATTR_INCLUDE_INGREDIENTS,
     ATTR_INCLUDE_STEPS,
+    ATTR_LIMIT,
     ATTR_LIST_ID,
     ATTR_LIST_NAME,
     ATTR_NAME,
@@ -67,7 +68,14 @@ from .const import (
     SERVICE_GET_RECIPE,
     SERVICE_GET_RECIPES,
     SERVICE_REFRESH,
+    SERVICE_SEARCH_RECIPES,
     SERVICE_UPDATE_RECIPE,
+)
+from .recipe_search import (
+    DEFAULT_SEARCH_LIMIT,
+    MAX_SEARCH_LIMIT,
+    normalize_search_text,
+    search_recipes,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -106,6 +114,28 @@ GET_RECIPES_SERVICE_SCHEMA = vol.Schema(
         vol.Optional(ATTR_QUERY): cv.string,
         vol.Optional(ATTR_INCLUDE_INGREDIENTS, default=True): cv.boolean,
         vol.Optional(ATTR_INCLUDE_STEPS, default=False): cv.boolean,
+    }
+)
+
+
+def _validate_search_limit(value: Any) -> int:
+    """Accept only whole numeric limits, including number-selector values."""
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not 1 <= value <= MAX_SEARCH_LIMIT
+        or value != int(value)
+    ):
+        raise vol.Invalid(f"Limit must be a whole number from 1 to {MAX_SEARCH_LIMIT}")
+    return int(value)
+
+
+SEARCH_RECIPES_SERVICE_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
+        vol.Required(ATTR_QUERY): cv.string,
+        vol.Optional(ATTR_LIMIT, default=DEFAULT_SEARCH_LIMIT): _validate_search_limit,
+        vol.Optional(ATTR_INCLUDE_INGREDIENTS, default=False): cv.boolean,
     }
 )
 
@@ -557,6 +587,32 @@ def _async_register_services(hass: HomeAssistant) -> None:
             ]
         }
 
+    async def async_handle_search_recipes(call: ServiceCall) -> ServiceResponse:
+        """Search locally and return candidates for a subsequent get_recipe call."""
+        query = call.data[ATTR_QUERY]
+        if not normalize_search_text(query):
+            raise _translated_error("empty_search_query")
+        _, entry_data = _get_entry_runtime_data(
+            hass, call.data.get(ATTR_CONFIG_ENTRY_ID)
+        )
+        try:
+            recipes = await async_call_with_timeout(
+                hass,
+                entry_data.client.get_recipes,
+                timeout=ANYLIST_REQUEST_TIMEOUT,
+            )
+        except Exception as err:
+            raise _translated_error("recipes_load_failed", error=err) from err
+
+        return await hass.async_add_executor_job(
+            lambda: search_recipes(
+                recipes,
+                query,
+                limit=call.data[ATTR_LIMIT],
+                include_ingredients=call.data[ATTR_INCLUDE_INGREDIENTS],
+            )
+        )
+
     async def async_handle_get_recipe(call: ServiceCall) -> ServiceResponse:
         """Return a single AnyList recipe."""
         _, entry_data = _get_entry_runtime_data(
@@ -806,6 +862,13 @@ def _async_register_services(hass: HomeAssistant) -> None:
         SERVICE_GET_RECIPES,
         async_handle_get_recipes,
         schema=GET_RECIPES_SERVICE_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SEARCH_RECIPES,
+        async_handle_search_recipes,
+        schema=SEARCH_RECIPES_SERVICE_SCHEMA,
         supports_response=SupportsResponse.ONLY,
     )
     hass.services.async_register(

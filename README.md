@@ -91,6 +91,7 @@ Recipe support is exposed through Home Assistant actions for automations, script
 
 - `anylist.refresh`
 - `anylist.get_recipes`
+- `anylist.search_recipes`
 - `anylist.get_recipe`
 - `anylist.add_recipe_to_list`
 - `anylist.create_recipe`
@@ -184,7 +185,79 @@ recipe without one, or replaces its existing image. Other metadata, including
 notes, source, rating, and creation date, is preserved. If importing the image
 fails, the recipe is not updated.
 
-Fetch recipes whose names contain `pasta`:
+### Search recipes, then read the selected recipe
+
+Use `anylist.search_recipes` to find compact candidates for a conversation agent:
+
+```yaml
+action: anylist.search_recipes
+data:
+  query: pink horseradish salmon
+  limit: 15
+  include_ingredients: false
+response_variable: recipe_candidates
+```
+
+`query` is required and must contain at least one letter or number. `limit` is
+a whole number from 1 to 50, defaulting to 15. `include_ingredients` defaults to
+`false`; enabling it searches ingredient names with less weight than titles.
+With multiple loaded AnyList accounts, supply `config_entry_id` using the same
+config entry ID field as the other recipe actions, and use that entry for the
+subsequent read.
+
+Matching runs locally after the integration retrieves recipes through its
+existing AnyList client. It needs no LLM or external search service. It normalizes
+Unicode, capitalization, accents, punctuation and whitespace, and matches distinct
+words in any order. Extra title words do not reduce relevance: the query above
+matches **Pink Horseradish & Dill Salmon**. Minor typos in words of at least four
+characters allow one insertion, deletion, substitution or adjacent transposition.
+
+Exact normalized titles rank first, followed by titles containing all query words,
+then partial and typo matches. Title matches carry more weight than ingredient
+matches. Candidates must match at least half the distinct query words, so unrelated
+recipes are excluded rather than added to fill the limit. This is word matching;
+synonyms and broader culinary meaning are left to the conversation agent.
+
+The response has this shape (the ID below is illustrative; real results preserve
+the exact AnyList recipe ID):
+
+```yaml
+recipes:
+  - id: recipe_123
+    name: Pink Horseradish & Dill Salmon
+    score: 90.0
+    match_explanation: All query words in title
+count: 1
+has_more: false
+```
+
+`count` is the number returned. `has_more` is true only when additional matching
+candidates were omitted by the limit. Search never returns ingredient lists or
+preparation instructions. Scores express ranking relevance, **not calibrated
+confidence**: exact normalized titles score 100, all-word title matches score 90,
+and partial/typo results score below 80. Ties sort by normalized title and then
+exact recipe ID, so duplicate or ambiguous titles remain separate candidates.
+
+The conversation agent should use context to select a candidate, or ask the user
+to clarify ambiguous matches before editing. It should then call
+`anylist.get_recipe` with that candidate's `id` as `recipe_id` to read full details:
+
+```yaml
+action: anylist.get_recipe
+data:
+  recipe_id: recipe_123 # Use the exact ID selected from the search response.
+response_variable: selected_recipe
+```
+
+Ingredients and preparation steps are included by default by `get_recipe`.
+Search does not select or edit a recipe automatically. Avoid automatically taking
+the first candidate for an edit when the user's intent is ambiguous.
+
+### List recipes with a substring filter
+
+`anylist.get_recipes` retains its case-insensitive substring behavior and response
+format. `anylist.get_recipe` still accepts an exact ID or exact name. For example,
+fetch recipes whose names contain `pasta`:
 
 ```yaml
 action: anylist.get_recipes

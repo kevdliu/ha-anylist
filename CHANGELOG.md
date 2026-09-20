@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0 - 2026-09-20
+
+- Add `anylist.search_recipes` with local word matching, Unicode normalization,
+  minor typo tolerance, and optional ingredient-name matching.
+- Return ranked, compact candidates with exact IDs, match explanations, a
+  configurable limit, returned count, and an indicator of omitted candidates.
+- Document the search-then-read workflow for conversation agents while keeping
+  `get_recipes` and `get_recipe` behavior unchanged.
+
 ## 0.5.1 - 2026-09-20
 
 - Add an optional `image_url` to `anylist.update_recipe` to add or replace a

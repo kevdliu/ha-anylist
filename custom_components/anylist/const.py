@@ -22,6 +22,7 @@ ANYLIST_POLL_INTERVAL = 60  # seconds
 # Services
 SERVICE_REFRESH = "refresh"
 SERVICE_GET_RECIPES = "get_recipes"
+SERVICE_SEARCH_RECIPES = "search_recipes"
 SERVICE_GET_RECIPE = "get_recipe"
 SERVICE_ADD_RECIPE_TO_LIST = "add_recipe_to_list"
 SERVICE_CREATE_RECIPE = "create_recipe"
@@ -31,6 +32,7 @@ SERVICE_DELETE_RECIPE = "delete_recipe"
 # Service attributes
 ATTR_CONFIG_ENTRY_ID = "config_entry_id"
 ATTR_QUERY = "query"
+ATTR_LIMIT = "limit"
 ATTR_INCLUDE_INGREDIENTS = "include_ingredients"
 ATTR_INCLUDE_STEPS = "include_steps"
 ATTR_RECIPE_ID = "recipe_id"
